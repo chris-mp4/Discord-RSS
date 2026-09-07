@@ -1,39 +1,28 @@
-// Fetches messages from a Discord channel and writes them out as posts.json
+// Fetches messages from a Discord channel, downloads any image attachments
+// into an images folder so they stay permanent, and writes posts.json.
 // Requires two environment variables: DISCORD_TOKEN and DISCORD_CHANNEL_ID
 
 const fs = require('fs');
+const path = require('path');
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID;
 const OUTPUT_PATH = 'posts.json';
+const IMAGES_DIR = 'images';
 
 if (!TOKEN || !CHANNEL_ID) {
   console.error('Missing DISCORD_TOKEN or DISCORD_CHANNEL_ID environment variable.');
   process.exit(1);
 }
 
-async function debugListVisibleChannels() {
-  const guildsResponse = await fetch('https://discord.com/api/v10/users/@me/guilds', {
-    headers: { Authorization: `Bot ${TOKEN}` },
-  });
-  const guilds = await guildsResponse.json();
-  console.log(`Bot can see ${guilds.length} server(s):`, guilds.map((g) => `${g.name} (${g.id})`));
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
 
-  for (const guild of guilds) {
-    const channelsResponse = await fetch(`https://discord.com/api/v10/guilds/${guild.id}/channels`, {
-      headers: { Authorization: `Bot ${TOKEN}` },
-    });
-    if (!channelsResponse.ok) {
-      console.log(`Could not list channels for ${guild.name}: ${channelsResponse.status}`);
-      continue;
-    }
-    const channels = await channelsResponse.json();
-    console.log(`Channels in ${guild.name}:`, channels.map((c) => `${c.name} (${c.id}) type ${c.type}`));
-  }
+function isImageAttachment(attachment) {
+  const ext = path.extname(attachment.filename || '').toLowerCase();
+  return IMAGE_EXTENSIONS.includes(ext);
 }
 
 async function fetchMessages() {
-  console.log(`Using channel ID: "${CHANNEL_ID}" (length: ${CHANNEL_ID.length})`);
   const url = `https://discord.com/api/v10/channels/${CHANNEL_ID}/messages?limit=100`;
 
   const response = await fetch(url, {
@@ -44,32 +33,73 @@ async function fetchMessages() {
 
   if (!response.ok) {
     const body = await response.text();
-    await debugListVisibleChannels();
     throw new Error(`Discord API request failed: ${response.status} ${body}`);
   }
 
   return response.json();
 }
 
-function cleanMessages(rawMessages) {
-  return rawMessages
-    .filter((message) => message.content && message.content.trim().length > 0)
-    .map((message) => ({
-      id: message.id,
-      content: message.content,
-      date: message.timestamp,
-      dateDisplay: new Date(message.timestamp).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      }),
-    }))
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
+async function downloadImage(attachment, messageId) {
+  const ext = path.extname(attachment.filename || '') || '.png';
+  const localFilename = `${messageId}-${attachment.id}${ext}`;
+  const localPath = path.join(IMAGES_DIR, localFilename);
+
+  if (fs.existsSync(localPath)) {
+    return localFilename;
+  }
+
+  const response = await fetch(attachment.url);
+  if (!response.ok) {
+    console.log(`Could not download attachment ${attachment.url}: ${response.status}`);
+    return null;
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  fs.mkdirSync(IMAGES_DIR, { recursive: true });
+  fs.writeFileSync(localPath, buffer);
+  return localFilename;
+}
+
+async function buildPost(message) {
+  const imageFilenames = [];
+
+  for (const attachment of message.attachments || []) {
+    if (!isImageAttachment(attachment)) continue;
+    const localFilename = await downloadImage(attachment, message.id);
+    if (localFilename) imageFilenames.push(localFilename);
+  }
+
+  return {
+    id: message.id,
+    content: message.content,
+    images: imageFilenames,
+    date: message.timestamp,
+    dateDisplay: new Date(message.timestamp).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    }),
+  };
+}
+
+async function buildPosts(rawMessages) {
+  const relevant = rawMessages.filter(
+    (message) =>
+      (message.content && message.content.trim().length > 0) ||
+      (message.attachments && message.attachments.some(isImageAttachment))
+  );
+
+  const posts = [];
+  for (const message of relevant) {
+    posts.push(await buildPost(message));
+  }
+
+  return posts.sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
 async function main() {
   const rawMessages = await fetchMessages();
-  const posts = cleanMessages(rawMessages);
+  const posts = await buildPosts(rawMessages);
   fs.writeFileSync(OUTPUT_PATH, JSON.stringify(posts, null, 2));
   console.log(`Wrote ${posts.length} posts to ${OUTPUT_PATH}`);
 }
