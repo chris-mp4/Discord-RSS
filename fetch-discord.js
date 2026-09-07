@@ -12,6 +12,26 @@ if (!TOKEN || !CHANNEL_ID) {
   process.exit(1);
 }
 
+async function debugListVisibleChannels() {
+  const guildsResponse = await fetch('https://discord.com/api/v10/users/@me/guilds', {
+    headers: { Authorization: `Bot ${TOKEN}` },
+  });
+  const guilds = await guildsResponse.json();
+  console.log(`Bot can see ${guilds.length} server(s):`, guilds.map((g) => `${g.name} (${g.id})`));
+
+  for (const guild of guilds) {
+    const channelsResponse = await fetch(`https://discord.com/api/v10/guilds/${guild.id}/channels`, {
+      headers: { Authorization: `Bot ${TOKEN}` },
+    });
+    if (!channelsResponse.ok) {
+      console.log(`Could not list channels for ${guild.name}: ${channelsResponse.status}`);
+      continue;
+    }
+    const channels = await channelsResponse.json();
+    console.log(`Channels in ${guild.name}:`, channels.map((c) => `${c.name} (${c.id}) type ${c.type}`));
+  }
+}
+
 async function fetchMessages() {
   console.log(`Using channel ID: "${CHANNEL_ID}" (length: ${CHANNEL_ID.length})`);
   const url = `https://discord.com/api/v10/channels/${CHANNEL_ID}/messages?limit=100`;
@@ -24,6 +44,7 @@ async function fetchMessages() {
 
   if (!response.ok) {
     const body = await response.text();
+    await debugListVisibleChannels();
     throw new Error(`Discord API request failed: ${response.status} ${body}`);
   }
 
