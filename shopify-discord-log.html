@@ -1,0 +1,68 @@
+<div id="discord-log" class="discord-log">
+  <p class="discord-log__loading">Loading updates...</p>
+</div>
+
+<style>
+  .discord-log {
+    max-width: 700px;
+    margin: 0 auto;
+    font-family: inherit;
+  }
+  .discord-log__entry {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    padding: 1.5rem 0;
+  }
+  .discord-log__date {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.6;
+    margin-bottom: 0.5rem;
+  }
+  .discord-log__content {
+    white-space: pre-wrap;
+    line-height: 1.5;
+  }
+</style>
+
+<script>
+  (function () {
+    // Replace this with your own repo's raw JSON URL once it is set up.
+    var FEED_URL = 'https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/posts.json';
+
+    fetch(FEED_URL)
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (posts) {
+        var container = document.getElementById('discord-log');
+        container.innerHTML = '';
+
+        if (!posts.length) {
+          container.innerHTML = '<p>No updates yet.</p>';
+          return;
+        }
+
+        posts.forEach(function (post) {
+          var entry = document.createElement('div');
+          entry.className = 'discord-log__entry';
+
+          var date = document.createElement('div');
+          date.className = 'discord-log__date';
+          date.textContent = post.dateDisplay;
+
+          var content = document.createElement('div');
+          content.className = 'discord-log__content';
+          content.textContent = post.content;
+
+          entry.appendChild(date);
+          entry.appendChild(content);
+          container.appendChild(entry);
+        });
+      })
+      .catch(function (error) {
+        document.getElementById('discord-log').innerHTML = '<p>Could not load updates right now.</p>';
+        console.error(error);
+      });
+  })();
+</script>
