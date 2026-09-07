@@ -13,6 +13,7 @@ if (!TOKEN || !CHANNEL_ID) {
 }
 
 async function fetchMessages() {
+  console.log(`Using channel ID: "${CHANNEL_ID}" (length: ${CHANNEL_ID.length})`);
   const url = `https://discord.com/api/v10/channels/${CHANNEL_ID}/messages?limit=100`;
 
   const response = await fetch(url, {
